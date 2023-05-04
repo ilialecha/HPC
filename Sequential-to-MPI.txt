@@ -1,0 +1,15 @@
+Converting an ordinary sequential C program into an MPI program can be a challenging task, as it requires you to identify the parts of the program that can be parallelized and then modify the program accordingly to make use of the MPI library functions. Here are the basic steps you could follow to convert your C program to an MPI program:
+
+    Identify the parts of the program that can be parallelized: Look for loops, operations on large arrays, and other parts of the program that can be executed independently of each other. These are the parts of the program that can be parallelized.
+
+    Initialize the MPI environment: You will need to initialize the MPI environment by calling the MPI_Init() function at the beginning of your program.
+
+    Determine the number of processes: Use the MPI_Comm_size() function to determine the number of processes that will be used in the program.
+
+    Determine the rank of each process: Use the MPI_Comm_rank() function to determine the rank of each process.
+
+    Divide the work among the processes: Depending on the parallelization strategy you choose, you may need to divide the work among the processes using functions like MPI_Scatter() or MPI_Bcast().
+
+    Modify the code to use MPI functions: Modify the code so that each process performs its share of the work using MPI function calls. This might involve changing loops, adding communication code between processes, and synchronizing processes as needed.
+
+    Finalize the MPI environment: Use the MPI_Finalize() function at the end of your program to clean up the MPI environment.
