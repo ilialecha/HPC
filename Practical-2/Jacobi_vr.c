@@ -139,7 +139,7 @@ char **argv;
 	displs[i] = displs[i-1] + recvcnts[i-1];
 
     /* Now gather with proper amount of values (lcnt) from each process */
-    MPI_Gatherv( xlocal[1], size   , MPI_DOUBLE,
+    MPI_Gatherv( xlocal[1], size  , MPI_DOUBLE,
 		x, recvcnts   , displs, MPI_DOUBLE, 
 		0, MPI_COMM_WORLD ); /* Statement S24 */
     if (rank == 0) {

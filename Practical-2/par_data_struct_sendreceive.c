@@ -79,7 +79,6 @@ char **argv;
     MPI_Sendrecv( xlocal[1],   maxn,   MPI_DOUBLE, prev_nbr, 1, 
 		  xlocal[maxn/size+1],   maxn,   MPI_DOUBLE, next_nbr, 1, 
 		    MPI_COMM_WORLD,   &status );   /* Statement S12 */
-
     /* Check that we have the correct results */
     errcnt = 0;
     for (i=1; i<=maxn/size; i++) 
