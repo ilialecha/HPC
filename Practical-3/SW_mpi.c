@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------
 
-Copyright (C) 2000 Peter Clote. 
+Copyright (C) 2000 Peter Clote.
 All Rights Reserved.
 
 Permission to use, copy, modify, and distribute this
@@ -20,17 +20,16 @@ THIS SOFTWARE OR ITS DERIVATIVES.
 
 -------------------------------------------------------------*/
 
-
 /*************************************************
-	Original Program: smithWaterman.c
-	Peter Clote, 11 Oct 2000
+  Original Program: smithWaterman.c
+  Peter Clote, 11 Oct 2000
 
 Program for local sequence alignment, using the Smith-Waterman
 algorithm and assuming a LINEAR gap penalty.
 A traceback is used to determine the alignment, and
 is determined by choosing that direction, for
-which S(i-1,j-1)+sigma(a_i,b_j), S(i-1,j)+Delta and 
-S(i,j-1)+Delta is maximum, i.e.  for which 
+which S(i-1,j-1)+sigma(a_i,b_j), S(i-1,j)+Delta and
+S(i,j-1)+Delta is maximum, i.e.  for which
 
                     _
                    |
@@ -49,73 +48,72 @@ is a maximum.
 
 /*
  FIX: SOME BUGS HAS BEEN SOLVED
-      SOME CODE HAS BEEN IMPROVED 
+      SOME CODE HAS BEEN IMPROVED
 */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>		// assertion handling
-#include <ctype.h>		// character handling
-#include <stdlib.h>		// def of RAND_MAX
+#include <assert.h> // assertion handling
+#include <ctype.h>  // character handling
+#include <stdlib.h> // def of RAND_MAX
 
-   /* Note:                      	 */
-   /* N must be the size of the arrays   */
-   /* Here it is assumed that the two	 */
-   /* sequences have the same size       */
+/* Note:                      	 */
+/* N must be the size of the arrays   */
+/* Here it is assumed that the two	 */
+/* sequences have the same size       */
 
 /* PARALLEL CODE */
-#include <mpi.h>		// Use MPI
+#include <mpi.h> // Use MPI
 
 /* The following C construct must be understood as:
- *    condition ? code_when_true : code when false 
+ *    condition ? code_when_true : code when false
  * is a shorthand for
- *     if (condition) { code_when_true  } 
+ *     if (condition) { code_when_true  }
  *        else        { code_when_false } */
-#define min(a,b) (((a)<(b)) ? (a) : (b)) /* Complete the value returned when
-					    the condition evaluates to false. */
+#define min(a, b) (((a) < (b)) ? (a) : (b)) /* Complete the value returned when the condition evaluates to false. */
 
 #define MAX_SEQ 50
 
 /* Macro to ease checking for errors when allocating memory dynamically. */
-#define CHECK_NULL(_check) {\
-   if ((_check)==NULL) \
-      fprintf(stderr, "Null Pointer allocating memory\n");\
-   }
+#define CHECK_NULL(_check)                                 \
+  {                                                        \
+    if ((_check) == NULL)                                  \
+      fprintf(stderr, "Null Pointer allocating memory\n"); \
+  }
 
 #include <sys/time.h>
-double getusec_() {
-        struct timeval time;
-        gettimeofday(&time, NULL);
-        return ((double)time.tv_sec * (double)1e6 + (double)time.tv_usec);
+double getusec_()
+{
+  struct timeval time;
+  gettimeofday(&time, NULL);
+  return ((double)time.tv_sec * (double)1e6 + (double)time.tv_usec);
 }
 
 #define START_COUNT_TIME stamp = getusec_();
-#define STOP_COUNT_TIME(_m) stamp = getusec_() - stamp;\
-                        stamp = stamp/1e6;\
-                        printf ("%s: %0.6f\n",(_m), stamp);
+#define STOP_COUNT_TIME(_m)   \
+  stamp = getusec_() - stamp; \
+  stamp = stamp / 1e6;        \
+  printf("%s: %0.6f\n", (_m), stamp);
 
-
-#define AA 20			// Maximum dimension for the similarity matrix
-#define MAX2(x,y)     ((x)<(y) ? (y) : (x))
-#define MAX3(x,y,z)   (MAX2(x,y)<(z) ? (z) : MAX2(x,y))
+#define AA 20 // Maximum dimension for the similarity matrix
+#define MAX2(x, y) ((x) < (y) ? (y) : (x))
+#define MAX3(x, y, z) (MAX2(x, y) < (z) ? (z) : MAX2(x, y))
 
 // function prototypes
-void error (char *);		/** error handling */
+void error(char *); /** error handling */
 
 int char2AAmem[256];
 int AA2charmem[AA];
-void initChar2AATranslation (void);
-
+void initChar2AATranslation(void);
 
 /* PARALLEL CODE */
-int getRowCount(int rowsTotal, int mpiRank, int mpiSize) {
+int getRowCount(int rowsTotal, int mpiRank, int mpiSize)
+{
   /* Adjust slack of rows in case rowsTotal is not exactly divisible */
   return (rowsTotal / mpiSize) + (rowsTotal % mpiSize > mpiRank);
 }
 
-
-int
-main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
   // variable declarations
@@ -123,32 +121,32 @@ main (int argc, char *argv[])
   char ch;
   int temp;
   int i, j, diag, down, right, DELTA;
-  //int tempi, tempj, x, y;
-  //int topskip, bottomskip;
-  //char *s1out, *s2out;  /* Pointers to arrays that will store the two results */
-  //int Aend, Bend, Abegin, Bbegin;
+  // int tempi, tempj, x, y;
+  // int topskip, bottomskip;
+  // char *s1out, *s2out;  /* Pointers to arrays that will store the two results */
+  // int Aend, Bend, Abegin, Bbegin;
   int max, Max, xMax, yMax;
   // Max is first found maximum in similarity matrix H
   // max is auxilliary to determine largest of
   // diag,down,right, xMax,yMax are h-coord of Max
   short *s1, *s2;  /* Pointers to arrays that will store the two sequences */
-  int *hptr;			// Scoring matrix
-  int **h;			// accessed as h[i][j]
-  int sim[AA][AA];		// Similarity matrix
-  //short **xTraceback, **yTraceback;
-  //short *xTracebackptr, *yTracebackptr;
-  int N; /* Lenght of sequence to analyze */
+  int *hptr;       // Scoring matrix
+  int **h;         // accessed as h[i][j]
+  int sim[AA][AA]; // Similarity matrix
+  // short **xTraceback, **yTraceback;
+  // short *xTracebackptr, *yTracebackptr;
+  int N;    /* Lenght of sequence to analyze */
   int dim1; /* Lenght of 1st sequence to analyze */
   int dim2; /* Lenght of 2nd sequence to analyze */
-  int nc; /* Number of characters read with fscanf */
-  int BS; /* Block size */
+  int nc;   /* Number of characters read with fscanf */
+  int BS;   /* Block size */
 
   /* PARALLEL CODE */
   /* Local matrices */
-  short *s1l;  /* Pointers to local arrays that will store the 1st sequence */
+  short *s1l; /* Pointers to local arrays that will store the 1st sequence */
   // Following variables are not needed unless traceback is implemented:
-  //int *hlptr;			// Scoring matrix
-  //int **hl;			// accessed as hl[i][j]
+  // int *hlptr;			// Scoring matrix
+  // int **hl;			// accessed as hl[i][j]
 
   int rank, nprocs, nrows;
   MPI_Status status;
@@ -157,163 +155,157 @@ main (int argc, char *argv[])
   START_COUNT_TIME;
 
   /* PARALLEL CODE */
-  MPI_Init (&argc, &argv);
-  MPI_Comm_rank( MPI_COMM_WORLD, &rank );
-  MPI_Comm_size( MPI_COMM_WORLD, &nprocs );
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-
-  if (!rank ) { /* Use process 0 as the master process and have it process the input */
-   /**** Error handling for input file ****/
-   if (argc < 6) 
+  if (!rank)
+  { /* Use process 0 as the master process and have it process the input */
+    /**** Error handling for input file ****/
+    if (argc < 6)
     {
-      fprintf (stderr, "Usage:\n");
-      fprintf (stderr, " mpirun.mpich -np P %s Seq1 Seq2 SM gapPenalty BS [N]\n", argv[0]);
-      fprintf (stderr, "   where:\n");
-      fprintf (stderr, "     P: Number of MPI processes\n");
-      fprintf (stderr, "     Seq1: File containing 1st sequence\n");
-      fprintf (stderr, "     Seq2: File containing 2nd sequence\n");
-      fprintf (stderr, "     SM: File containing Similarity Matrix\n");
-      fprintf (stderr, "     gapPenalty: Penalty of a gap\n");
-      fprintf (stderr, "     BS: Block size for the parallel implementation\n");
-      fprintf (stderr, "     [N]: Max length of sequences to use (optional)\n");
+      fprintf(stderr, "Usage:\n");
+      fprintf(stderr, " mpirun.mpich -np P %s Seq1 Seq2 SM gapPenalty BS [N]\n", argv[0]);
+      fprintf(stderr, "   where:\n");
+      fprintf(stderr, "     P: Number of MPI processes\n");
+      fprintf(stderr, "     Seq1: File containing 1st sequence\n");
+      fprintf(stderr, "     Seq2: File containing 2nd sequence\n");
+      fprintf(stderr, "     SM: File containing Similarity Matrix\n");
+      fprintf(stderr, "     gapPenalty: Penalty of a gap\n");
+      fprintf(stderr, "     BS: Block size for the parallel implementation\n");
+      fprintf(stderr, "     [N]: Max length of sequences to use (optional)\n");
       MPI_Abort(MPI_COMM_WORLD, 911);
-      exit (1);
+      exit(1);
     }
 
+    /***** Initialization of input file and pair array **/
+    in1 = fopen(argv[1], "r");
+    in2 = fopen(argv[2], "r");
+    sm = fopen(argv[3], "r");
+    DELTA = atoi(argv[4]);
+    BS = atoi(argv[5]);
+    N = MAX_SEQ;
+    if (argc >= 7)
+      N = atoi(argv[6]);
+    if (argc > 7)
+      printf("WARNING: Additional parameters after argv[6]=%s not used.\n",
+             argv[6]);
 
-   /***** Initialization of input file and pair array **/
-   in1 = fopen (argv[1], "r");
-   in2 = fopen (argv[2], "r");
-   sm = fopen (argv[3], "r");
-   DELTA = atoi (argv[4]);
-   BS = atoi (argv[5]);
-   N = MAX_SEQ;
-   if (argc >= 7)
-     N = atoi (argv[6]);
-   if (argc > 7)
-     printf ("WARNING: Additional parameters after argv[6]=%s not used.\n",
-	     argv[6]);
+    assert(in1);
+    assert(in2);
+    assert(sm);
+    assert(N > 0);
+    assert((0 < BS) && (BS <= N));
 
-   assert(in1);
-   assert(in2);
-   assert(sm);
-   assert(N > 0);
-   assert((0 < BS) && (BS <= N));
+    printf("Gap Penalty=%d\n", DELTA);
+    printf("Block Size used BS=%d\n", BS);
 
-   printf("Gap Penalty=%d\n", DELTA);
-   printf("Block Size used BS=%d\n", BS);
+    CHECK_NULL((s1 = (short *)malloc(sizeof(short) * (N + 1))));
+    CHECK_NULL((s2 = (short *)malloc(sizeof(short) * (N + 1))));
 
-   CHECK_NULL ((s1 = (short *) malloc (sizeof (short) * (N + 1))));
-   CHECK_NULL ((s2 = (short *) malloc (sizeof (short) * (N + 1))));
+    initChar2AATranslation();
 
-   initChar2AATranslation ();
-
-   /** Read similarity matrix **/
-   if (fscanf (sm, "%*s") == EOF) /* Initial string in file not used.
-				     Instead, the coding is hard coded via
-				     routine initChar2AATranslation (void) */
-     {
-       fprintf (stderr, "Similarity Matrix file empty\n");
-       fclose (sm);
-       exit (1);
-     } 
-   for (i = 0; i < AA; i++)  /* Use initial AA rows in the matrix in the file */
-     for (j = 0; j <= i; j++)
-       {
-	 if (fscanf (sm, "%d ", &temp) == EOF)
-	   {
-	     fprintf (stderr, "Similarity Matrix file empty\n");
-	     fclose (sm);
-	     exit (1);
-	   }
-	 sim[i][j] = temp;
-       }
-   fclose (sm);
-   for (i = 0; i < AA; i++)
-     for (j = i + 1; j < AA; j++)
-       sim[i][j] = sim[j][i];	// symmetrify
-
-
-
-   /** Read first file into array "s1" **/
- 
-   i = 0;
-   do
-     {
-       nc = fscanf (in1, "%c", &ch);
-       if (nc > 0 && char2AAmem[(int) ch] >= 0)
-	 {
-	   s1[++i] = char2AAmem[(int) ch];
-	 }
-     }
-   while (nc > 0 && (i < N));
-
-   dim1 = i;	/* We store the length of the 1st sequence analyzed in dim1 */
-   fclose (in1);
-   //assert(dim1 >= N);
-   if (dim1<N)
-     printf("WARNING: Sequence 1 read from file %s has %d values (<N=%d)\n",
-	    argv[1], dim1, N);
-   printf("Length of sequence 1 analyzed=%d\n", dim1);
-  
-
-   /** Read second file into array "s2" **/
-   i = 0;
-   do
+    /** Read similarity matrix **/
+    if (fscanf(sm, "%*s") == EOF) /* Initial string in file not used.
+             Instead, the coding is hard coded via
+             routine initChar2AATranslation (void) */
     {
-      nc = fscanf (in2, "%c", &ch);
-      if (nc > 0 && char2AAmem[(int) ch] >= 0)
-	{
-	  s2[++i] = char2AAmem[(int) ch];
-	}
+      fprintf(stderr, "Similarity Matrix file empty\n");
+      fclose(sm);
+      exit(1);
     }
-   while (nc > 0 && (i < N));
+    for (i = 0; i < AA; i++) /* Use initial AA rows in the matrix in the file */
+      for (j = 0; j <= i; j++)
+      {
+        if (fscanf(sm, "%d ", &temp) == EOF)
+        {
+          fprintf(stderr, "Similarity Matrix file empty\n");
+          fclose(sm);
+          exit(1);
+        }
+        sim[i][j] = temp;
+      }
+    fclose(sm);
+    for (i = 0; i < AA; i++)
+      for (j = i + 1; j < AA; j++)
+        sim[i][j] = sim[j][i]; // symmetrify
 
-   dim2 = i;	/* We store the length of the 2nd sequence analyzed in dim2 */
-   fclose (in2);
-   //assert(s2[0] >= N);
-   if (dim2<N)
-     printf("WARNING: Sequence 2 read from file %s has %d values (<N=%d)\n",
-	    argv[2], dim2, N);
+    /** Read first file into array "s1" **/
 
-   printf("Length of sequence 2 analyzed=%d\n", dim2);
+    i = 0;
+    do
+    {
+      nc = fscanf(in1, "%c", &ch);
+      if (nc > 0 && char2AAmem[(int)ch] >= 0)
+      {
+        s1[++i] = char2AAmem[(int)ch];
+      }
+    } while (nc > 0 && (i < N));
+
+    dim1 = i; /* We store the length of the 1st sequence analyzed in dim1 */
+    fclose(in1);
+    // assert(dim1 >= N);
+    if (dim1 < N)
+      printf("WARNING: Sequence 1 read from file %s has %d values (<N=%d)\n",
+             argv[1], dim1, N);
+    printf("Length of sequence 1 analyzed=%d\n", dim1);
+
+    /** Read second file into array "s2" **/
+    i = 0;
+    do
+    {
+      nc = fscanf(in2, "%c", &ch);
+      if (nc > 0 && char2AAmem[(int)ch] >= 0)
+      {
+        s2[++i] = char2AAmem[(int)ch];
+      }
+    } while (nc > 0 && (i < N));
+
+    dim2 = i; /* We store the length of the 2nd sequence analyzed in dim2 */
+    fclose(in2);
+    // assert(s2[0] >= N);
+    if (dim2 < N)
+      printf("WARNING: Sequence 2 read from file %s has %d values (<N=%d)\n",
+             argv[2], dim2, N);
+
+    printf("Length of sequence 2 analyzed=%d\n", dim2);
 
   } /* End of work specific for the master. */
 
   /* PARALLEL CODE HERE */
-  MPI_Bcast( &dim1 , 1    , MPI_INT, 0, MPI_COMM_WORLD ); /* Broadcast dim1 */
-  MPI_Bcast( &dim2 , 1    , MPI_INT, 0, MPI_COMM_WORLD ); /* Broadcast dim2 */
-  MPI_Bcast( &BS   , 1    , MPI_INT, 0, MPI_COMM_WORLD ); /* Broadcast BS */
-  MPI_Bcast( &DELTA, 1    , MPI_INT, 0, MPI_COMM_WORLD ); /* Broadcast DELTA */
-  MPI_Bcast( &sim  , AA*AA, MPI_INT, 0, MPI_COMM_WORLD  ); /* Broadcast matrix sim */
+  MPI_Bcast(&dim1, 1, MPI_INT, 0, MPI_COMM_WORLD);      /* Broadcast dim1 */
+  MPI_Bcast(&dim2, 1, MPI_INT, 0, MPI_COMM_WORLD);      /* Broadcast dim2 */
+  MPI_Bcast(&BS, 1, MPI_INT, 0, MPI_COMM_WORLD);        /* Broadcast BS */
+  MPI_Bcast(&DELTA, 1, MPI_INT, 0, MPI_COMM_WORLD);     /* Broadcast DELTA */
+  MPI_Bcast(&sim, AA * AA, MPI_INT, 0, MPI_COMM_WORLD); /* Broadcast matrix sim */
 
- /*int rowsTotal, int mpiRank, int mpiSize*/
-  nrows = getRowCount( nrows, rank, size  );
-  printf ("rank:%d  nrows=%d \n", rank, nrows );
+  /*int rowsTotal, int mpiRank, int mpiSize*/
+  nrows = getRowCount(nrows, rank, nprocs );
+  printf("rank:%d  nrows=%d \n", rank, nrows);
   /* Allocate the local vector  s1l used to keep the 1st sequence:
      it must have nrows+1 elements of data type short. */
-  CHECK_NULL ((s1l = (short *) malloc ( ... ) ));
+  CHECK_NULL((s1l = (short *)malloc( nrows + 1 ))); //MODIFIED
 
-  if (rank) {  /* Have process other than the master allocate space */
-   //CHECK_NULL ((s1 = (short *) malloc (sizeof (short) * (dim1 + 1))));
-   CHECK_NULL ((s2 = (short *) malloc (sizeof (short) * (dim2 + 1))));
+  if (rank)
+  { /* Have process other than the master allocate space */
+    // CHECK_NULL ((s1 = (short *) malloc (sizeof (short) * (dim1 + 1))));
+    CHECK_NULL((s2 = (short *)malloc(sizeof(short) * (dim2 + 1))));
   }
 
-  //MPI_Bcast( s1+1, dim1, MPI_SHORT, 0, MPI_COMM_WORLD );
-  MPI_Scatter( s1+1, nrows, ... ); 
+  // MPI_Bcast( s1+1, dim1, MPI_SHORT, 0, MPI_COMM_WORLD );
+  MPI_Scatter(s1 + 1, nrows, MPI_SHORT, s1l + 1, nrows, MPI_SHORT, 0, MPI_COMM_WORLD); //MODIFIED
   /* s1+1: use pointer arithmetic to point to the second element in the array
    *       since the 1st position is not used.
    *        ___________________      ____
-   *       |      |     |                | 
-   *       |s1[0] |s1[1]|       ....     | 
-   *       |______|_____|_____       ____| 
+   *       |      |     |                |
+   *       |s1[0] |s1[1]|       ....     |
+   *       |______|_____|_____       ____|
    *        ^      ^
    *        |      |
    *        s1    s1+1
    *
    *       */
-  MPI_Bcast( s2+1, dim2, ... );
-
+  MPI_Bcast(s2 + 1, dim2, MPI_SHORT, 0, MPI_COMM_WORLD);
 
 #if 0
   CHECK_NULL ((s1out = (char *) malloc (sizeof (char) * 2 * dim1)));
@@ -323,10 +315,10 @@ main (int argc, char *argv[])
   int dim1sz;
   /* Allocate full matrix with dim1 rows in the root process, in preparation for traceback,
    * but only a part (nrows+1 rows) for all the other processes. */
-  dim1sz = (rank ? nrows : ...); /* condition ? true_case : false_case */
-  CHECK_NULL ((hptr = (int *) malloc (sizeof (int) * (dim1sz + 1) * (dim2 + 1))));
-  CHECK_NULL ((h = (int **) malloc (sizeof (int *) * (dim1sz + 1))));
-  printf ("rank:%d  dim1sz=%d \n", rank, dim1sz );
+  dim1sz = (rank ? nrows : dim1); /* condition ? true_case : false_case */ //MODIFIED
+  CHECK_NULL((hptr = (int *)malloc(sizeof(int) * (dim1sz + 1) * (dim2 + 1))));
+  CHECK_NULL((h = (int **)malloc(sizeof(int *) * (dim1sz + 1))));
+  printf("rank:%d  dim1sz=%d \n", rank, dim1sz);
 
   /* Mount h[dim1sz][dim2] */
   for (i = 0; i <= dim1sz; i++)
@@ -375,81 +367,83 @@ main (int argc, char *argv[])
     h[0][j] = 0;
 
   /* PARALLEL CODE */
-  for (int jj = 1; jj <= dim2; jj += ...) {   /* Strip mining: Define blocks of size BS in the columns */
+  for (int jj = 1; jj <= dim2; jj += BS) //MODIFIED
+  { /* Strip mining: Define blocks of size BS in the columns */
 
-   if (rank != 0) MPI_Recv( ... );
+    if (rank != 0)
+      MPI_Recv( &h[0][jj], BS, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, &status ); //MODIFIED
 
-   for (i = 1; i <= ... ; i++)
-    for (j = jj; j < min(...,...); j++) /* Strip mining: Traverse BS columns within the current block */
+    for (i = 1; i <= dim1; i++) //MODIFIED
+      for (j = jj; j < min( ... ); j++) /* Strip mining: Traverse BS columns within the current block */
       {
-	diag  = h[i - 1][j - 1] + sim[ s1l[i] ][ s2[j] ];
-	down  = h[i - 1][j    ] + DELTA;
-	right = h[i    ][j - 1] + DELTA;
-	max = MAX3 (diag, down, right);
-	if (max <= 0)
-	  {
-	    h[i][j] = 0;
-	    //xTraceback[i][j] = -1;
-	    //yTraceback[i][j] = -1;
-	    // these values already -1
-	  }
-	else if (max == diag)
-	  {
-	    h[i][j] = diag;
-	    //xTraceback[i][j] = i - 1;
-	    //yTraceback[i][j] = j - 1;
-	  }
-	else if (max == down)
-	  {
-	    h[i][j] = down;
-	    //xTraceback[i][j] = i - 1;
-	    //yTraceback[i][j] = j;
-	  }
-	else
-	  {
-	    h[i][j] = right;
-	    //xTraceback[i][j] = i;
-	    //yTraceback[i][j] = j - 1;
-	  }
-	if (max > Max)
-	  {
-	    Max = max;
-	    xMax = i;
-	    yMax = j;
-	  }
-      }	// end for loop
-   if (rank != nprocs-1 ) MPI_Send( ... );
-   /* Here we could use a non-blocking send. */
+        diag = h[i - 1][j - 1] + sim[s1l[i]][s2[j]];
+        down = h[i - 1][j] + DELTA;
+        right = h[i][j - 1] + DELTA;
+        max = MAX3(diag, down, right);
+        if (max <= 0)
+        {
+          h[i][j] = 0;
+          // xTraceback[i][j] = -1;
+          // yTraceback[i][j] = -1;
+          //  these values already -1
+        }
+        else if (max == diag)
+        {
+          h[i][j] = diag;
+          // xTraceback[i][j] = i - 1;
+          // yTraceback[i][j] = j - 1;
+        }
+        else if (max == down)
+        {
+          h[i][j] = down;
+          // xTraceback[i][j] = i - 1;
+          // yTraceback[i][j] = j;
+        }
+        else
+        {
+          h[i][j] = right;
+          // xTraceback[i][j] = i;
+          // yTraceback[i][j] = j - 1;
+        }
+        if (max > Max)
+        {
+          Max = max;
+          xMax = i;
+          yMax = j;
+        }
+      } // end for loop
+    if (rank != nprocs - 1)
+      MPI_Send( &h[0][jj], BS, MPI_INT, rank + 1, 0, MPI_COMM_WORLD ); //MODIFIED
+    /* Here we could use a non-blocking send. */
   }
 
 #if 1
   /* PARALLEL CODE */
-    int localres[2];
-    int globalres[2];
-    localres[0] = Max;
-    localres[1] = rank;
+  int localres[2];
+  int globalres[2];
+  localres[0] = Max;
+  localres[1] = rank;
 
-    MPI_Allreduce(localres, ... );
+  MPI_Allreduce(localres, globalres, 1, MPI_2INT, MPI_MAXLOC, MPI_COMM_WORLD); //MODIFIED
 
-    if (rank == 0) {
-        printf("Rank %d has maximum value of %d\n",
-               globalres[1], globalres[0]);
-    }
-
+  if (rank == 0)
+  {
+    printf("Rank %d has maximum value of %d\n",
+           globalres[1], globalres[0]);
+  }
 
 #endif
 
-
   STOP_COUNT_TIME("Computation of scoring matrix time in seconds");
   /* PARALLEL CODE */
-  int rem   = dim1 % nprocs; /* If nprocs does not divide dim1 exactly one extra row is given to the first rem processes
-                                i.e. those having rank < rem. */
-  int extra = (rank < rem) ? rank : rem; /* How many extra rows do we need to account for? */
-  int grow  = (dim1/nprocs)*rank + extra +xMax; /* Global index between 1 and dim1 for xMax. */
-  printf ("rank:%d  Max=%d xMax=%d (global xMax=%d) yMax=%d\n", rank, Max, xMax, grow, yMax);
-  if (rank==nprocs-1)
-  printf ("Last element in matrix: rank=%d\t(local index)\t(global index)\n\t\t\t\th[%d][%d] =\th[%d][%d] = %d\n",
-          rank, nrows, dim2, grow, dim2, h[nrows][dim2]);
+  int rem = dim1 % nprocs;                          /* If nprocs does not divide dim1 exactly one extra row is given to the first rem processes
+                                                       i.e. those having rank < rem. */
+  int extra = (rank < rem) ? rank : rem;            /* How many extra rows do we need to account for? */
+  int grow = (dim1 / nprocs) * rank + extra + xMax; /* Global index between 1 and dim1 for xMax. */
+  printf("rank:%d  Max=%d xMax=%d (global xMax=%d) yMax=%d\n", rank, Max, xMax, grow, yMax);
+  if (rank == nprocs - 1)
+    printf("Last element in matrix: rank=%d\t(local index)\t(global index)\n\t\t\t\th[%d][%d] =\th[%d][%d] = %d\n",
+           rank, nrows, dim2, grow, dim2, h[nrows][dim2]);
 
 #if 0
   START_COUNT_TIME;
@@ -505,30 +499,29 @@ main (int argc, char *argv[])
   STOP_COUNT_TIME("Traceback and print results time in seconds");
 #endif
 
-  if ( ... ) free(s1); /* Only the master process allocated it */
-  free(s2); free(h); free(hptr); 
+  if (!rank) //MODIFIED
+    free(s1); /* Only the master process allocated it */
+  free(s2);
+  free(h);
+  free(hptr);
   free(s1l);
-  //free(s1out); free(s2out);
-  //free(xTracebackptr); free(yTracebackptr); 
-  //free(xTraceback); free(yTraceback); 
+  // free(s1out); free(s2out);
+  // free(xTracebackptr); free(yTracebackptr);
+  // free(xTraceback); free(yTraceback);
 
   /* PARALLEL CODE */
-  //i=
-  MPI_Finalize ();
-  //printf ("rank:%d  err=%d \n", rank, i );
-
+  // i=
+  MPI_Finalize();
+  // printf ("rank:%d  err=%d \n", rank, i );
 }
 
-void
-error (char *s)
+void error(char *s)
 {
-  fprintf (stderr, "%s\n", s);
-  exit (1);
+  fprintf(stderr, "%s\n", s);
+  exit(1);
 }
 
-
-void
-initChar2AATranslation (void)
+void initChar2AATranslation(void)
 {
   int i;
   for (i = 0; i < 256; i++)
