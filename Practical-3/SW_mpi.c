@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-  if (!rank)
+  if (!rank) /*MODIFIED*/
   { /* Use process 0 as the master process and have it process the input */
     /**** Error handling for input file ****/
     if (argc < 6)
